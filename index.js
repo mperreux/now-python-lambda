@@ -50,12 +50,13 @@ exports.build = async ({ files, entrypoint }) => {
   // will be used on `from $here import handler`
   // for example, `from api.users import handler`
   console.log("entrypoint is", entrypoint);
-  const userHandlerFilePath = entrypoint
-    .replace(/\//g, ".")
-    .replace(/\.py$/, "");
+  const userHandlerFilePath = entrypoint.replace(/\.py$/, "");
+  console.log("userHandlerFilePath:", userHandlerFilePath);
 
+  const outputFiles = await glob("**", srcDir);
+  console.log("Output Files: ", outputFiles);
   const lambda = await createLambda({
-    files: await glob("**", srcDir),
+    files: outputFiles,
     handler: `${userHandlerFilePath}.handler`,
     runtime: "python3.6",
     environment: {}
