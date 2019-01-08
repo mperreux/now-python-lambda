@@ -1,11 +1,12 @@
 const path = require("path");
 const execa = require("execa");
-const { readFile, writeFile } = require("fs.promised");
 const getWritableDirectory = require("@now/build-utils/fs/get-writable-directory.js");
 const download = require("@now/build-utils/fs/download.js");
 const glob = require("@now/build-utils/fs/glob.js");
 const { createLambda } = require("@now/build-utils/lambda.js");
 const downloadAndInstallPip = require("./download-and-install-pip");
+const Promise = require("bluebird");
+const readFile = Promise.promisify(require("fs").readFile);
 
 async function pipInstall(pipPath, srcDir, ...args) {
   console.log(`running "pip install -t ${srcDir} ${args.join(" ")}"...`);
@@ -20,10 +21,11 @@ async function pipInstall(pipPath, srcDir, ...args) {
 }
 
 exports.config = {
-  maxLambdaSize: "5mb"
+  maxLambdaSize: "10mb"
 };
 
-exports.build = async ({ files, entrypoint }) => {
+exports.build = async ({ files, entrypoint, config }) => {
+  console.log("config:", config);
   console.log("downloading files...");
 
   const srcDir = await getWritableDirectory();
@@ -38,31 +40,39 @@ exports.build = async ({ files, entrypoint }) => {
 
   const pipPath = await downloadAndInstallPip();
 
-  await pipInstall(pipPath, srcDir, "requests");
+  const { dependenciesFile = "requirements.txt" } = config;
 
-  if (files["requirements.txt"]) {
-    console.log('found "requirements.txt"');
+  if (files[dependenciesFile]) {
+    console.log(`found ${dependenciesFile}`);
 
-    const requirementsTxtPath = files["requirements.txt"].fsPath;
+    const requirementsTxtPath = files[dependenciesFile].fsPath;
     await pipInstall(pipPath, srcDir, "-r", requirementsTxtPath);
+  } else {
+    console.log(`did not find dependencies file ${dependenciesFile}`);
   }
 
   // will be used on `from $here import handler`
   // for example, `from api.users import handler`
   console.log("entrypoint is", entrypoint);
-  const userHandlerFilePath = entrypoint.replace(/\.py$/, "");
-  console.log("userHandlerFilePath:", userHandlerFilePath);
 
   const outputFiles = await glob("**", srcDir);
-  console.log("Output Files: ", outputFiles);
-  const lambda = await createLambda({
-    files: outputFiles,
-    handler: `${userHandlerFilePath}.handler`,
-    runtime: "python3.6",
-    environment: {}
-  });
 
-  return {
-    [entrypoint]: lambda
-  };
+  const serverlessConfigFile = await readFile(path.join(srcDir, entrypoint));
+  const serverlessConfig = JSON.parse(serverlessConfigFile);
+
+  const lambdas = await Promise.map(
+    Object.entries(serverlessConfig.functions),
+    ([key, value]) => {
+      return createLambda({
+        files: outputFiles,
+        handler: `${path.dirname(entrypoint)}/${value.handler}`,
+        runtime: "python3.7",
+        environment: {}
+      }).then(lambda => {
+        return { [value.entrypoint]: lambda };
+      });
+    }
+  );
+
+  return Object.assign({}, ...lambdas);
 };
