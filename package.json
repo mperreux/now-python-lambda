@@ -1,6 +1,6 @@
 {
   "name": "now-python-lambda",
-  "version": "1.0.17",
+  "version": "1.0.20",
   "description": "",
   "main": "index.js",
   "scripts": {
@@ -9,6 +9,7 @@
   "author": "Michael Perreux",
   "dependencies": {
     "bluebird": "^3.5.3",
+    "dotenv": "^6.2.0",
     "execa": "^1.0.0",
     "node-fetch": "^2.2.0"
   },

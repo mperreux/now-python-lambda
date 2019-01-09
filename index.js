@@ -7,6 +7,7 @@ const { createLambda } = require("@now/build-utils/lambda.js");
 const downloadAndInstallPip = require("./download-and-install-pip");
 const Promise = require("bluebird");
 const readFile = Promise.promisify(require("fs").readFile);
+const dotenv = require("dotenv");
 
 async function pipInstall(pipPath, srcDir, ...args) {
   console.log(`running "pip install -t ${srcDir} ${args.join(" ")}"...`);
@@ -60,19 +61,35 @@ exports.build = async ({ files, entrypoint, config }) => {
   const serverlessConfigFile = await readFile(path.join(srcDir, entrypoint));
   const serverlessConfig = JSON.parse(serverlessConfigFile);
 
+  let env = {};
+  if (serverlessConfig.environment) {
+    env = serverlessConfig.environment.reduce((acc, setting) => {
+      if (setting.file) {
+        const result = dotenv.config({
+          path: path.join(srcDir, path.dirname(entrypoint), setting.file)
+        });
+        return {
+          ...acc,
+          ...result.parsed
+        };
+      }
+    }, {});
+  }
+
   const lambdas = await Promise.map(
     Object.entries(serverlessConfig.functions),
     ([key, value]) => {
+      const handler = path.join(path.dirname(entrypoint), value.handler);
       return createLambda({
         files: outputFiles,
         handler: `${path.dirname(entrypoint)}/${value.handler}`,
         runtime: "python3.7",
-        environment: {}
+        environment: env
       }).then(lambda => {
         return { [value.entrypoint]: lambda };
       });
     }
   );
-
+  console.log(lambdas);
   return Object.assign({}, ...lambdas);
 };
